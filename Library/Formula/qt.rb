@@ -3,7 +3,7 @@ require 'formula'
 class Qt < Formula
   homepage 'http://qt.nokia.com/'
   url 'http://releases.qt-project.org/qt4/source/qt-everywhere-opensource-src-4.8.2.tar.gz'
-  md5 '3c1146ddf56247e16782f96910a8423b'
+  sha1 'e1e2edef1d63ed677d6534d32800c2e1f7ad0e73'
 
   bottle do
     version 1
@@ -14,32 +14,30 @@ class Qt < Formula
 
   head 'git://gitorious.org/qt/qt.git', :branch => 'master'
 
+  env :std # Otherwise fails on SSE intrinsics
+
+  option :universal
+  option 'with-qtdbus', 'Enable QtDBus module'
+  option 'with-qt3support', 'Enable deprecated Qt3Support module'
+  option 'with-demos-examples', 'Enable Qt demos and examples'
+  option 'with-debug-and-release', 'Compile Qt in debug and release mode'
+  option 'developer', 'Compile and link Qt with developer options'
+
+  depends_on "d-bus" if build.include? 'with-qtdbus'
+  depends_on 'sqlite' if MacOS.version == :leopard
+
   fails_with :clang do
     build 421
   end
 
-  def options
-    [
-      ['--with-qtdbus', "Enable QtDBus module."],
-      ['--with-qt3support', "Enable deprecated Qt3Support module."],
-      ['--with-demos-examples', "Enable Qt demos and examples."],
-      ['--with-debug-and-release', "Compile Qt in debug and release mode."],
-      ['--universal', "Build both x86_64 and x86 architectures."],
-      ['--developer', 'Compile and link Qt with Qt developer options']
-    ]
-  end
-
-  depends_on "d-bus" if ARGV.include? '--with-qtdbus'
-  depends_on 'sqlite' if MacOS.leopard?
-
   def patches
     # fixes conflict on osx 10.5. See qt bug:
     # https://bugreports.qt-project.org/browse/QTBUG-23258
-    if MacOS.leopard?
+    if MacOS.version == :leopard
       "http://bugreports.qt-project.org/secure/attachment/26712/Patch-Qt-4.8-for-10.5"
     # add support for Mountain Lion
-    # gist submitted upstream here: https://codereview.qt-project.org/#change,31646
-    elsif MacOS.mountain_lion?
+    # should be unneeded for 4.8.3
+    elsif MacOS.version >= :mountain_lion
       [ "https://qt.gitorious.org/qt/qt/commit/422f1b?format=patch",
         "https://qt.gitorious.org/qt/qt/commit/665355?format=patch",
         "https://raw.github.com/gist/3187034/893252db0ae3bb9bb5fa3ff7c530c7978399b101/0001-Fix-WebKit-on-OS-X-Mountain-Lion.patch" ]
@@ -50,7 +48,7 @@ class Qt < Formula
   def install
     # Apply binary git patch; normal patch ignores this.
     # TODO: Autodetect binary patches and apply them correctly.
-    system "git apply --exclude=*/QtWebKit.pro 002-homebrew.diff" if MacOS.mountain_lion?
+    system "git apply --exclude=*/QtWebKit.pro 002-homebrew.diff" if MacOS.version >= :mountain_lion
 
     ENV.append "CXXFLAGS", "-fvisibility=hidden"
     args = ["-prefix", prefix,
@@ -59,34 +57,34 @@ class Qt < Formula
             "-cocoa", "-fast" ]
 
     # See: https://github.com/mxcl/homebrew/issues/issue/744
-    args << "-system-sqlite" if MacOS.leopard?
+    args << "-system-sqlite" if MacOS.version == :leopard
 
     args << "-plugin-sql-mysql" if (HOMEBREW_CELLAR+"mysql").directory?
 
-    if ARGV.include? '--with-qtdbus'
+    if build.include? 'with-qtdbus'
       args << "-I#{Formula.factory('d-bus').lib}/dbus-1.0/include"
       args << "-I#{Formula.factory('d-bus').include}/dbus-1.0"
     end
 
-    if ARGV.include? '--with-qt3support'
+    if build.include? 'with-qt3support'
       args << "-qt3support"
     else
       args << "-no-qt3support"
     end
 
-    unless ARGV.include? '--with-demos-examples'
+    unless build.include? 'with-demos-examples'
       args << "-nomake" << "demos" << "-nomake" << "examples"
     end
 
-    if MacOS.prefer_64_bit? or ARGV.build_universal?
+    if MacOS.prefer_64_bit? or build.universal?
       args << '-arch' << 'x86_64'
     end
 
-    if !MacOS.prefer_64_bit? or ARGV.build_universal?
+    if !MacOS.prefer_64_bit? or build.universal?
       args << '-arch' << 'x86'
     end
 
-    if ARGV.include? '--with-debug-and-release'
+    if build.include? 'with-debug-and-release'
       args << "-debug-and-release"
       # Debug symbols need to find the source so build in the prefix
       mv "../qt-everywhere-opensource-src-#{version}", "#{prefix}/src"
@@ -95,7 +93,7 @@ class Qt < Formula
       args << "-release"
     end
 
-    args << '-developer-build' if ARGV.include? '--developer'
+    args << '-developer-build' if build.include? 'developer'
 
     # Needed for Qt 4.8.1 due to attempting to link moc with gcc.
     ENV['LD'] = ENV.cxx
